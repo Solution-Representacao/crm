@@ -97,6 +97,9 @@ h2{font-size:16px;margin:18px 0 10px}
 .login-caixa .fg{margin-bottom:12px}
 .login-caixa .btn{width:100%;justify-content:center;padding:10px}
 .msg{min-height:18px;font-size:13px;color:var(--vermelho);margin-top:8px;text-align:center}
+.senha-caixa{position:relative;display:block}.senha-caixa input{padding-right:42px!important;width:100%}
+.olhinho{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;cursor:pointer;padding:6px;color:var(--cinza);display:flex;border-radius:6px}
+.olhinho:hover{color:var(--vinho);background:var(--areia-cl)}.olhinho svg{width:20px;height:20px}
 .oculto{display:none!important}
 @media (max-width:640px){.grade{grid-template-columns:1fr}.fg.l2{grid-column:span 1}.topo .quem span{display:none}}
 .timbre{display:none}
@@ -253,7 +256,7 @@ async function entrar(){
   if(NO_TESTE && r.j.usuario.r!=='admin'){ $('l-msg').textContent='O ambiente de teste é só do administrador.'; return; }
   cracha=r.j.cracha; eu=r.j.usuario;
   try{ sessionStorage.setItem('solutio-cracha',cracha); sessionStorage.setItem('solutio-eu',JSON.stringify(eu)); }catch(e){}
-  $('l-s').value='';
+  $('l-s').value=''; esconderSenhas();
   await abrirSistema();
   if(eu.trocar) abrirSenha(true);
 }
@@ -521,7 +524,7 @@ function abrirSenha(obrigatoria){
   $('senha-fechar').classList.toggle('oculto',obrigatoria===true);
   $('janela-senha').classList.add('on');
 }
-function fecharSenha(){ $('janela-senha').classList.remove('on'); }
+function fecharSenha(){ $('janela-senha').classList.remove('on'); esconderSenhas(); }
 async function trocarSenha(){
   const a=$('s-atual').value, n=$('s-nova').value, n2=$('s-nova2').value;
   if(n.length<8){ $('s-msg').textContent='A senha nova precisa de 8 caracteres ou mais.'; return; }
@@ -556,6 +559,21 @@ async function editarUsuario(i){
   if(r.status!==200){ alert(r.j.erro||'Não gravou.'); return; }
   renderUsuarios();
 }
+
+// ---------- olhinho da senha ----------
+const OLHO_ABERTO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const OLHO_FECHADO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2A10.7 10.7 0 0 1 12 4c6.5 0 10 8 10 8a17.6 17.6 0 0 1-2.2 3.2M6.6 6.6C3.9 8.4 2 12 2 12s3.5 8 10 8a9.7 9.7 0 0 0 5.4-1.6"/><path d="M14.1 14.1a3 3 0 1 1-4.2-4.2"/><path d="M2 2l20 20"/></svg>';
+document.querySelectorAll('input[type="password"]').forEach(function(inp){
+  const caixa=document.createElement('span'); caixa.className='senha-caixa';
+  inp.parentNode.insertBefore(caixa,inp); caixa.appendChild(inp);
+  const b=document.createElement('button'); b.type='button'; b.className='olhinho'; b.tabIndex=-1;
+  b.setAttribute('aria-label','Mostrar senha'); b.innerHTML=OLHO_ABERTO;
+  b.onclick=function(){ const ver=inp.type==='password'; inp.type=ver?'text':'password';
+    b.innerHTML=ver?OLHO_FECHADO:OLHO_ABERTO; b.setAttribute('aria-label',ver?'Esconder senha':'Mostrar senha'); inp.focus(); };
+  caixa.appendChild(b);
+});
+// Ao fechar a janela de senha ou sair, a senha volta a ficar escondida.
+function esconderSenhas(){ document.querySelectorAll('.senha-caixa input').forEach(function(i){ i.type='password'; }); document.querySelectorAll('.olhinho').forEach(function(b){ b.innerHTML=OLHO_ABERTO; }); }
 
 // ---------- início ----------
 document.addEventListener('keydown',function(e){
