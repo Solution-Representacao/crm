@@ -179,6 +179,7 @@ th{position:static}h2{break-after:avoid}tr{break-inside:avoid}
     </div>
     <div class="modal-pe">
       <button class="btn oculto" id="f-excluir" onclick="excluirOrcamento()" style="color:var(--vermelho);margin-right:auto">Excluir</button>
+      <button class="btn oculto" id="f-enviar-dal" onclick="abrirEnvioDal()">Enviar para a Daluminium</button>
       <button class="btn" onclick="fecharFicha()">Cancelar</button>
       <button class="btn btn-p" id="f-salvar" onclick="salvarFicha()">Salvar</button>
     </div>
@@ -216,6 +217,25 @@ th{position:static}h2{break-after:avoid}tr{break-inside:avoid}
   </div>
 </div>
 
+<!-- ===== ENVIAR O ORÇAMENTO PRONTO PARA A DALUMINIUM ===== -->
+<div class="fundo" id="janela-envio-dal" style="z-index:50">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-topo"><h3>Enviar para a Daluminium</h3><button class="btn" onclick="fecharEnvioDal()">✕</button></div>
+    <div class="modal-corpo">
+      <div class="aviso" id="ed-destino" style="background:var(--vinho-cl);color:var(--vinho)"></div>
+      <div class="grade">
+        <div class="fg"><label for="ed-produto">Produto</label><input id="ed-produto" maxlength="120"></div>
+        <div class="fg"><label for="ed-marca">Marca</label><input id="ed-marca" maxlength="60"></div>
+        <div class="fg"><label for="ed-valor">Valor do orçamento (R$)</label><input id="ed-valor" inputmode="decimal"></div>
+        <div class="fg"><label for="ed-arquivo">Arquivo da proposta (até 8 MB)</label><input id="ed-arquivo" type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx"></div>
+        <div class="fg l2"><label for="ed-obs">Observação para a vendedora</label><textarea id="ed-obs" maxlength="2000" placeholder="Prazo, condições, o que foi considerado no orçamento…"></textarea></div>
+      </div>
+      <div class="msg" id="ed-msg"></div>
+    </div>
+    <div class="modal-pe"><button class="btn" onclick="fecharEnvioDal()">Cancelar</button><button class="btn btn-p" id="ed-enviar" onclick="enviarParaDal()">Enviar</button></div>
+  </div>
+</div>
+
 <!-- ===== CADASTRO DE USUÁRIO ===== -->
 <div class="fundo" id="janela-usuario">
   <div class="modal" style="max-width:520px">
@@ -231,7 +251,7 @@ th{position:static}h2{break-after:avoid}tr{break-inside:avoid}
       </div>
       <div class="msg" id="usu-msg"></div>
     </div>
-    <div class="modal-pe"><button class="btn" onclick="fecharUsuario()">Cancelar</button><button class="btn btn-p" id="usu-salvar" onclick="salvarUsuario()">Salvar</button></div>
+    <div class="modal-pe"><button class="btn oculto" id="usu-excluir" onclick="excluirUsuario()" style="color:var(--vermelho);margin-right:auto">Excluir usuário</button><button class="btn" onclick="fecharUsuario()">Cancelar</button><button class="btn btn-p" id="usu-salvar" onclick="salvarUsuario()">Salvar</button></div>
   </div>
 </div>
 
@@ -652,11 +672,53 @@ function abrirFicha(id){
   document.querySelectorAll('#ficha input,#ficha select,#ficha textarea').forEach(function(el){ el.disabled=!pode; });
   $('f-salvar').classList.toggle('oculto',!pode);
   $('f-excluir').classList.toggle('oculto',!(o&&nivel()>=NIVEL.gerente));
+  $('f-enviar-dal').classList.toggle('oculto',!(o&&nivel()>=NIVEL.gerente));
+  if(o&&o.enviadoDal) $('f-quem').textContent+=' · Enviado para a Daluminium em '+dataBR(o.enviadoDal.em)+' por '+o.enviadoDal.por+'.';
   $('ficha').classList.add('on');
   setTimeout(function(){ $('f-cliente').focus(); },50);
 }
 function mostrarMotivo(){ $('fg-motivo').classList.toggle('oculto',etapa($('f-etapa').value).tipo!=='perdido'); }
 function fecharFicha(){ $('ficha').classList.remove('on'); fichaId=null; }
+
+// ---------- enviar o orçamento pronto para a Daluminium (gerente e admin) ----------
+let _envioId=null;
+function abrirEnvioDal(){
+  const o=ativos().find(function(x){ return x.id===fichaId; }); if(!o) return;
+  _envioId=o.id;
+  const dalO=o.dalId?((dal&&dal.orcamentos)||[]).find(function(d){ return d.id===o.dalId; }):null;
+  $('ed-destino').innerHTML=o.dalId
+    ?'Vai para o <b>negócio que veio da Daluminium</b>'+(dalO&&dalO.vendedora?' (vendedora <b>'+esc(dalO.vendedora)+'</b>)':'')+': entra uma anotação, o arquivo e a etiqueta "Solutio: orçado". A etapa lá não muda.'
+    :'Este orçamento <b>não veio da Daluminium</b>. Enviar vai <b>criar um negócio novo</b> no CRM da Daluminium (cliente '+esc(o.cliente||'—')+'), sem vendedora — o gerente de lá distribui.'+(o.enviadoDal?'<br><b>Atenção:</b> este já foi enviado em '+dataBR(o.enviadoDal.em)+'.':'');
+  $('ed-produto').value=o.produto||''; $('ed-marca').value=o.marca||''; $('ed-valor').value=valorCampo(o.valor);
+  $('ed-obs').value=''; $('ed-arquivo').value=''; $('ed-msg').textContent='';
+  $('janela-envio-dal').classList.add('on');
+}
+function fecharEnvioDal(){ $('janela-envio-dal').classList.remove('on'); _envioId=null; }
+function lerArquivoBase64(f){
+  return new Promise(function(ok,erro){
+    const r=new FileReader();
+    r.onload=function(){ ok(String(r.result).split(',')[1]||''); };
+    r.onerror=function(){ erro(new Error('Não consegui ler o arquivo.')); };
+    r.readAsDataURL(f);
+  });
+}
+async function enviarParaDal(){
+  const msg=function(t){ $('ed-msg').textContent=t; };
+  const f=$('ed-arquivo').files[0];
+  if(f&&f.size>8*1024*1024) return msg('O arquivo tem mais de 8 MB. Diminua (ex.: salve o PDF em qualidade menor) e tente de novo.');
+  const valor=lerValor($('ed-valor').value);
+  if(!valor&&!f) return msg('Coloque o valor ou anexe o arquivo da proposta.');
+  $('ed-enviar').disabled=true; msg('Enviando…');
+  let arquivo=null;
+  try{ if(f) arquivo={nome:f.name,mime:f.type||'',base64:await lerArquivoBase64(f)}; }
+  catch(e){ $('ed-enviar').disabled=false; return msg(e.message); }
+  const r=await api('enviar-daluminium','POST',{orcamentoId:_envioId,valor:valor,produto:$('ed-produto').value.trim(),marca:$('ed-marca').value.trim(),obs:$('ed-obs').value.trim(),arquivo:arquivo});
+  $('ed-enviar').disabled=false;
+  if(r.status!==200) return msg(r.j.erro||'Não consegui enviar.');
+  const id=_envioId; fecharEnvioDal(); fecharFicha();
+  await carregar(); render(); carregarDal();
+  aviso(r.j.criado?'Enviado. Foi criado um negócio novo no CRM da Daluminium com este orçamento.':'Enviado. O orçamento pronto já está no negócio da vendedora, no CRM da Daluminium.','Pronto');
+}
 async function salvarFicha(){
   const v=function(id){ return $(id).value.trim(); };
   const f={dataOrcamento:v('f-data'),etapa:v('f-etapa'),cliente:v('f-cliente'),telefone:v('f-telefone'),produto:v('f-produto'),
@@ -736,11 +798,21 @@ function editarUsuario(i){
   const souEu=u&&u.u===eu.u;
   $('usu-funcao').disabled=souEu; $('usu-ativo').disabled=souEu;
   $('usu-ativo').checked=u?u.ativo:true;
+  // Excluir: não a si mesmo; o gerente só exclui funcionário e consulta.
+  $('usu-excluir').classList.toggle('oculto',!(u&&!souEu&&(eu.r==='admin'||(NIVEL[u.r]||0)<NIVEL.gerente)));
   $('usu-dica-senha').textContent=u?'Deixe em branco para não trocar. Se preencher, vira senha provisória: a pessoa cria a dela no próximo acesso.':'8 caracteres ou mais. A pessoa cria a senha dela no primeiro acesso.';
   $('janela-usuario').classList.add('on');
   setTimeout(function(){ $(u?'usu-nome':'usu-nome').focus(); },50);
 }
 function fecharUsuario(){ $('janela-usuario').classList.remove('on'); _usuarioEditando=null; esconderSenhas(); }
+async function excluirUsuario(){
+  const u=_usuarioEditando; if(!u) return;
+  const sim=await confirmar('Excluir o usuário '+u.n+' ('+u.u+')?\n\nEle sai da lista e não entra mais. Os orçamentos dele ficam SEM responsável, para você redistribuir. O caderno de acessos continua mostrando o que ele fez.\n\nSe for só por um tempo, prefira desmarcar "Acesso ativo".','Excluir usuário','Excluir');
+  if(!sim) return;
+  const r=await api('usuarios','POST',{u:u.u,excluir:true});
+  if(r.status!==200){ $('usu-msg').textContent=r.j.erro||'Não excluiu.'; return; }
+  fecharUsuario(); await carregar(); renderUsuarios();
+}
 async function salvarUsuario(){
   const u=_usuarioEditando, v=function(id){ return $(id).value.trim(); };
   const nome=v('usu-nome'), login=(u?u.u:v('usu-login')).toLowerCase(), tel=v('usu-tel').replace(/\D/g,''), senha=$('usu-senha').value;
