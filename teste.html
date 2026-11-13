@@ -159,7 +159,7 @@ th{position:static}h2{break-after:avoid}tr{break-inside:avoid}
           <span class="dica">Pode ser uma data antiga. É ela que conta no relatório mês a mês.</span></div>
         <div class="fg"><label for="f-etapa">Etapa</label><select id="f-etapa" onchange="mostrarMotivo()"></select></div>
         <div class="fg"><label for="f-cliente">Cliente *</label><input id="f-cliente" maxlength="120"></div>
-        <div class="fg"><label for="f-telefone">Telefone</label><input id="f-telefone" maxlength="40" inputmode="tel"></div>
+        <div class="fg"><label for="f-telefone">Telefone</label><div style="display:flex;gap:6px"><input id="f-telefone" maxlength="40" inputmode="tel"><button type="button" class="btn" onclick="mandarWhatsApp($('f-telefone').value,$('f-cliente').value)">WhatsApp</button></div></div>
         <div class="fg"><label for="f-produto">Produto</label><input id="f-produto" maxlength="120" list="dl-produtos"></div>
         <div class="fg"><label for="f-marca">Marca</label><input id="f-marca" maxlength="60" list="dl-marcas"></div>
         <div class="fg"><label for="f-valor">Valor (R$)</label><input id="f-valor" inputmode="decimal" placeholder="0,00"></div>
@@ -193,6 +193,43 @@ th{position:static}h2{break-after:avoid}tr{break-inside:avoid}
       <button class="btn" onclick="fecharDal()">Fechar</button>
       <button class="btn btn-p" id="fd-acompanhar" onclick="acompanharDal()">Acompanhar no meu funil</button>
     </div>
+  </div>
+</div>
+
+<!-- ===== AVISO / CONFIRMAÇÃO DO SISTEMA (no lugar das caixas do navegador) ===== -->
+<div class="fundo" id="janela-aviso" style="z-index:60">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-topo"><h3 id="av-titulo">Aviso</h3></div>
+    <div class="modal-corpo" id="av-texto" style="white-space:pre-wrap"></div>
+    <div class="modal-pe"><button class="btn" id="av-nao">Cancelar</button><button class="btn btn-p" id="av-sim">OK</button></div>
+  </div>
+</div>
+
+<!-- ===== VISOR DE ANEXO (abre dentro do sistema) ===== -->
+<div class="fundo" id="visor-anexo" style="z-index:55;padding:12px">
+  <div class="modal" style="max-width:1100px;height:calc(100vh - 24px);display:flex;flex-direction:column">
+    <div class="modal-topo"><h3 id="vis-nome" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Anexo</h3>
+      <div style="display:flex;gap:8px"><button class="btn" id="vis-baixar">Baixar</button><button class="btn" onclick="fecharVisor()">✕</button></div></div>
+    <div id="vis-corpo" style="flex:1;min-height:0;background:var(--areia-cl);display:flex;align-items:center;justify-content:center;overflow:auto"></div>
+  </div>
+</div>
+
+<!-- ===== CADASTRO DE USUÁRIO ===== -->
+<div class="fundo" id="janela-usuario">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-topo"><h3 id="usu-titulo">Novo usuário</h3><button class="btn" onclick="fecharUsuario()">✕</button></div>
+    <div class="modal-corpo">
+      <div class="grade">
+        <div class="fg l2"><label for="usu-nome">Nome completo *</label><input id="usu-nome" maxlength="80" autocomplete="off"></div>
+        <div class="fg"><label for="usu-login">Usuário (para entrar) *</label><input id="usu-login" maxlength="30" autocomplete="off" placeholder="ex.: paula" style="text-transform:lowercase"></div>
+        <div class="fg"><label for="usu-tel">WhatsApp (com DDD) *</label><input id="usu-tel" maxlength="20" inputmode="tel" placeholder="(69) 99999-9999"></div>
+        <div class="fg"><label for="usu-funcao">Função *</label><select id="usu-funcao"></select></div>
+        <div class="fg" style="justify-content:flex-end"><label class="marca" style="display:flex;gap:8px;align-items:center;padding:8px 0"><input type="checkbox" id="usu-ativo"> Acesso ativo</label></div>
+        <div class="fg l2"><label for="usu-senha">Senha provisória</label><input id="usu-senha" type="password" autocomplete="new-password"><span class="dica" id="usu-dica-senha"></span></div>
+      </div>
+      <div class="msg" id="usu-msg"></div>
+    </div>
+    <div class="modal-pe"><button class="btn" onclick="fecharUsuario()">Cancelar</button><button class="btn btn-p" id="usu-salvar" onclick="salvarUsuario()">Salvar</button></div>
   </div>
 </div>
 
@@ -233,6 +270,19 @@ const MESES=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','
 
 let cracha='', eu=null, dados={orcamentos:[]}, versao=0, dal=null, vista='funil', fichaId=null;
 const filtro={busca:'',ano:'',marca:'',vendedor:'',situacao:'',semData:false};
+
+// ---------- janelas do sistema (nunca a caixa do navegador) ----------
+function janela(titulo,texto,comCancelar,rotuloSim){
+  return new Promise(function(ok){
+    $('av-titulo').textContent=titulo; $('av-texto').textContent=texto;
+    $('av-sim').textContent=rotuloSim||'OK'; $('av-nao').classList.toggle('oculto',!comCancelar);
+    const fim=function(v){ $('janela-aviso').classList.remove('on'); $('av-sim').onclick=null; $('av-nao').onclick=null; ok(v); };
+    $('av-sim').onclick=function(){ fim(true); }; $('av-nao').onclick=function(){ fim(false); };
+    $('janela-aviso').classList.add('on'); setTimeout(function(){ $('av-sim').focus(); },30);
+  });
+}
+function aviso(texto,titulo){ return janela(titulo||'Aviso',texto,false); }
+function confirmar(texto,titulo,rotuloSim){ return janela(titulo||'Confirmar',texto,true,rotuloSim||'Sim'); }
 
 // ---------- utilidades ----------
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
@@ -316,9 +366,9 @@ async function alterar(mudanca){
     if(mudanca(copia)===false) return false;
     const r=await api('','PUT',{data:copia,versao:versao});
     if(r.status===200){ dados=copia; versao=r.j.versao; return true; }
-    if(r.status!==409){ alert(r.j.erro||'Não consegui salvar. Tente de novo.'); return false; }
+    if(r.status!==409){ aviso(r.j.erro||'Não consegui salvar. Tente de novo.'); return false; }
   }
-  alert('Muita gente salvando ao mesmo tempo. Tente de novo em instantes.');
+  aviso('Muita gente salvando ao mesmo tempo. Tente de novo em instantes.');
   return false;
 }
 
@@ -423,7 +473,7 @@ function htmlDal(){
     '<div class="tabela-caixa"><table><thead><tr><th>Lançado em</th><th>Cliente</th><th>Telefone</th><th>Cidade</th><th>Vendedora</th><th>Etapa</th><th class="num">Valor</th><th>Atualizado</th></tr></thead><tbody>'+
     (l.length?l.map(function(o){
       const cls=o.situacao==='ganho'?'etq-ganho':o.situacao==='perdido'?'etq-perdido':'etq-aberto';
-      return '<tr class="clic" onclick="abrirDal(\''+esc(o.id)+'\')"><td>'+dataBR(o.criadoEm)+'</td><td>'+esc(o.cliente)+(meuDoDal(o.id)?' <span class="etq etq-dal">no meu funil</span>':'')+((o.docs||[]).length?' <span class="etq etq-aberto">📎 '+o.docs.length+'</span>':'')+'</td><td>'+(o.telefone?'<a href="https://wa.me/55'+esc(String(o.telefone).replace(/\D/g,''))+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">'+esc(o.telefone)+'</a>':'')+'</td><td>'+esc(o.cidade)+'</td><td>'+esc(o.vendedora)+'</td><td><span class="etq '+cls+'">'+esc(o.etapa)+'</span>'+(o.motivoPerda?' '+esc(o.motivoPerda):'')+'</td><td class="num">'+moeda(o.valor)+'</td><td>'+dataBR(o.atualizadoEm)+'</td></tr>';
+      return '<tr class="clic" onclick="abrirDal(\''+esc(o.id)+'\')"><td>'+dataBR(o.criadoEm)+'</td><td>'+esc(o.cliente)+(meuDoDal(o.id)?' <span class="etq etq-dal">no meu funil</span>':'')+((o.docs||[]).length?' <span class="etq etq-aberto">📎 '+o.docs.length+'</span>':'')+'</td><td>'+(o.telefone?esc(o.telefone)+botaoWhats(o.telefone,o.cliente):'')+'</td><td>'+esc(o.cidade)+'</td><td>'+esc(o.vendedora)+'</td><td><span class="etq '+cls+'">'+esc(o.etapa)+'</span>'+(o.motivoPerda?' '+esc(o.motivoPerda):'')+'</td><td class="num">'+moeda(o.valor)+'</td><td>'+dataBR(o.atualizadoEm)+'</td></tr>';
     }).join(''):'<tr><td colspan="8" class="vazio">Nenhum orçamento marcado como Solutio por enquanto.</td></tr>')+
     '</tbody><tfoot><tr><td colspan="6">'+l.length+' orçamento(s)</td><td class="num">'+moeda(soma)+'</td><td></td></tr></tfoot></table></div>';
 }
@@ -437,7 +487,7 @@ function abrirDal(id){
   if(!o) return;
   dalAberto=o;
   const linha=function(rot,val){ return val?'<div class="fg"><label>'+rot+'</label><div style="padding:6px 0;white-space:pre-wrap">'+val+'</div></div>':''; };
-  const tel=o.telefone?'<a href="https://wa.me/55'+esc(String(o.telefone).replace(/\D/g,''))+'" target="_blank" rel="noopener">'+esc(o.telefone)+'</a> <span class="dica">(abre o WhatsApp)</span>':'';
+  const tel=o.telefone?esc(o.telefone)+botaoWhats(o.telefone,o.cliente):'';
   const docs=(o.docs||[]);
   $('fd-titulo').textContent=o.cliente||'Orçamento da Daluminium';
   $('fd-corpo').innerHTML=
@@ -464,14 +514,29 @@ function abrirDal(id){
   $('ficha-dal').classList.add('on');
 }
 function fecharDal(){ $('ficha-dal').classList.remove('on'); dalAberto=null; }
+// Anexo abre DENTRO do sistema (visor), nunca em aba do navegador. Baixar
+// baixa direto (o servidor manda como "anexo para salvar"), sem sair da tela.
 async function abrirAnexoDal(i,modo){
   const o=dalAberto; const d=o&&(o.docs||[])[i]; if(!d) return;
-  // A aba abre JÁ no clique (senão o navegador bloqueia) e recebe o endereço depois.
-  const aba=window.open('about:blank','_blank');
   const r=await api('daluminium-anexo','POST',{negocio:o.id,doc:d.id,modo:modo,nomeArquivo:d.nome});
-  if(r.status!==200||!r.j.abrir){ if(aba) aba.close(); alert(r.j.erro||'Não consegui abrir o anexo.'); return; }
-  if(aba) aba.location.href=r.j.abrir; else location.href=r.j.abrir;
+  if(r.status!==200||!r.j.abrir){ aviso(r.j.erro||'Não consegui abrir o anexo.'); return; }
+  if(modo==='baixar'){ baixarPeloEndereco(r.j.abrir); return; }
+  mostrarNoVisor(d,r.j.abrir,function(){ abrirAnexoDal(i,'baixar'); });
 }
+function baixarPeloEndereco(url){
+  const f=document.createElement('iframe'); f.style.display='none'; f.src=url; document.body.appendChild(f);
+  setTimeout(function(){ f.remove(); },60000);
+}
+function mostrarNoVisor(d,url,baixar){
+  const nome=String(d.nome||''), ext=(nome.split('.').pop()||'').toLowerCase();
+  const c=$('vis-corpo'); $('vis-nome').textContent=nome; $('vis-baixar').onclick=baixar;
+  if(/^(jpe?g|png|gif|webp|bmp)$/.test(ext)) c.innerHTML='<img src="'+esc(url)+'" alt="" style="max-width:100%;max-height:100%;object-fit:contain" oncontextmenu="return false">';
+  else if(/^(mp4|webm|mov|m4v|3gp)$/.test(ext)) c.innerHTML='<video src="'+esc(url)+'" controls autoplay style="max-width:100%;max-height:100%"></video>';
+  else if(ext==='pdf' && navigator.pdfViewerEnabled!==false) c.innerHTML='<iframe src="'+esc(url)+'#toolbar=0" style="width:100%;height:100%;border:0;background:#fff"></iframe>';
+  else c.innerHTML='<div class="vazio">Este tipo de arquivo não abre aqui'+(ext==='pdf'?' neste aparelho':'')+'.<br><br><button class="btn btn-p" onclick="$(\'vis-baixar\').click()">Baixar</button></div>';
+  $('visor-anexo').classList.add('on');
+}
+function fecharVisor(){ $('visor-anexo').classList.remove('on'); $('vis-corpo').innerHTML=''; }
 async function acompanharDal(){
   const o=dalAberto; if(!o) return;
   const meu=meuDoDal(o.id);
@@ -486,7 +551,7 @@ async function acompanharDal(){
       situacao:'Veio da Daluminium',criadoEm:agora(),criadoPor:eu.n,atualizadoEm:agora(),atualizadoPor:eu.n,
       notas:[{quando:agora(),quem:eu.n,texto:'Veio da Daluminium (vendedora '+(o.vendedora||'—')+'). O que o cliente quer: '+(o.interesse||'—')}]});
   });
-  if(!ok){ alert('Não consegui criar. Atualize a tela e tente de novo.'); return; }
+  if(!ok){ aviso('Não consegui criar. Atualize a tela e tente de novo.'); return; }
   fecharDal(); render(); abrirFicha(id);
 }
 
@@ -545,7 +610,7 @@ function htmlRelatorio(){
 // ---------- ficha ----------
 function abrirFicha(id){
   const o=id?ativos().find(function(x){return x.id===id;}):null;
-  if(id&&!o){ alert('Este orçamento não está mais aqui. Atualize a tela.'); return; }
+  if(id&&!o){ aviso('Este orçamento não está mais aqui. Atualize a tela.'); return; }
   fichaId=id||null;
   $('f-etapa').innerHTML=ETAPAS.map(function(e){return '<option value="'+e.id+'">'+esc(e.nome)+'</option>';}).join('');
   const p=function(c,v){ $(c).value=v==null?'':v; };
@@ -572,8 +637,8 @@ async function salvarFicha(){
   const f={dataOrcamento:v('f-data'),etapa:v('f-etapa'),cliente:v('f-cliente'),telefone:v('f-telefone'),produto:v('f-produto'),
     marca:v('f-marca'),valor:lerValor(v('f-valor')),vendedor:v('f-vendedor'),profissional:v('f-profissional'),prazo:v('f-prazo'),
     cidade:v('f-cidade'),uf:v('f-uf').toUpperCase(),situacao:v('f-situacao'),motivoPerda:etapa(v('f-etapa')).tipo==='perdido'?v('f-motivo'):''};
-  if(!f.cliente){ alert('Preencha o nome do cliente.'); $('f-cliente').focus(); return; }
-  if(f.dataOrcamento && f.dataOrcamento>new Date().toISOString().slice(0,10)){ alert('A data do orçamento está no futuro. Confira.'); return; }
+  if(!f.cliente){ aviso('Preencha o nome do cliente.').then(function(){ $('f-cliente').focus(); }); return; }
+  if(f.dataOrcamento && f.dataOrcamento>new Date().toISOString().slice(0,10)){ aviso('A data do orçamento está no futuro. Confira.'); return; }
   const nota=v('f-nota');
   const id=fichaId||novoId();
   $('f-salvar').disabled=true;
@@ -593,7 +658,7 @@ async function salvarFicha(){
 }
 async function excluirOrcamento(){
   const id=fichaId; const o=ativos().find(function(x){return x.id===id;});
-  if(!o||!confirm('Excluir o orçamento de '+(o.cliente||'—')+'?\n\nEle sai das telas e dos relatórios. (Fica guardado no histórico do banco.)')) return;
+  if(!o||!(await confirmar('Excluir o orçamento de '+(o.cliente||'—')+'?\n\nEle sai das telas e dos relatórios. (Fica guardado no histórico do banco.)','Excluir orçamento','Excluir'))) return;
   const ok=await alterar(function(base){ const x=base.orcamentos.find(function(y){return y.id===id;}); if(!x) return false; x.excluido=true; x.excluidoEm=agora(); x.excluidoPor=eu.n; });
   if(ok){ fecharFicha(); render(); }
 }
@@ -613,7 +678,7 @@ async function trocarSenha(){
   const r=await api('trocar-senha','POST',{atual:a,nova:n});
   if(r.status!==200){ $('s-msg').textContent=r.j.erro||'Não consegui trocar.'; return; }
   eu.trocar=false; try{ sessionStorage.setItem('solutio-eu-'+SISTEMA,JSON.stringify(eu)); }catch(e){}
-  fecharSenha(); alert('Senha trocada.');
+  fecharSenha(); aviso('Senha trocada.','Pronto');
 }
 
 // ---------- usuários (admin) ----------
@@ -624,22 +689,74 @@ async function renderUsuarios(){
   const rot=ROTULO;
   window._usuarios=r.j.lista;
   $('conteudo').innerHTML='<div class="barra"><span class="esp"></span><button class="btn btn-p" onclick="editarUsuario()">+ Novo usuário</button></div>'+
-    '<div class="tabela-caixa"><table><thead><tr><th>Nome</th><th>Login</th><th>Função</th><th>Situação</th><th></th></tr></thead><tbody>'+
-    r.j.lista.map(function(u,i){ return '<tr><td>'+esc(u.n)+'</td><td>'+esc(u.u)+'</td><td>'+esc(rot[u.r]||u.r)+'</td><td>'+(u.ativo?(u.trocar?'Senha provisória':'Ativo'):'Desligado')+'</td><td><button class="btn" onclick="editarUsuario('+i+')">Alterar</button></td></tr>'; }).join('')+
+    '<div class="tabela-caixa"><table><thead><tr><th>Nome completo</th><th>Usuário</th><th>WhatsApp</th><th>Função</th><th>Situação</th><th></th></tr></thead><tbody>'+
+    r.j.lista.map(function(u,i){ return '<tr><td>'+esc(u.n)+'</td><td>'+esc(u.u)+'</td><td>'+esc(foneBR(u.tel))+'</td><td>'+esc(rot[u.r]||u.r)+'</td><td>'+(u.ativo?(u.trocar?'Senha provisória':'Ativo'):'Desligado')+'</td><td><button class="btn" onclick="editarUsuario('+i+')">Alterar</button></td></tr>'; }).join('')+
     '</tbody></table></div><p class="dica" style="margin-top:10px">'+(NO_TESTE?'<b>Lista de usuários do TESTE</b> — separada da produção, com senhas próprias. ':'')+'<b>Administrador</b>: tudo. <b>Gerente</b>: lança, corrige e exclui; cadastra funcionário e consulta. <b>Funcionário</b>: lança e atualiza, não exclui. <b>Só consulta</b>: olha, não altera.</p>';
 }
-async function editarUsuario(i){
+// Janela de cadastro (igual à Daluminium): nome completo, usuário, WhatsApp,
+// função, senha provisória e ativo/desligado.
+let _usuarioEditando=null;
+function foneBR(t){ t=String(t||'').replace(/\D/g,''); if(t.length===11) return '('+t.slice(0,2)+') '+t.slice(2,7)+'-'+t.slice(7); if(t.length===10) return '('+t.slice(0,2)+') '+t.slice(2,6)+'-'+t.slice(6); return t; }
+function editarUsuario(i){
   const u=(typeof i==='number')?window._usuarios[i]:null;
-  const login=u?u.u:prompt('Login (ex.: paula):'); if(!login) return;
-  const nome=prompt('Nome:',u?u.n:''); if(nome===null) return;
-  const opcoes=eu.r==='admin'?'admin, gerente, funcionario ou consulta':'funcionario ou consulta';
-  const funcao=prompt('Função — digite '+opcoes+':',u?u.r:'funcionario'); if(funcao===null) return;
-  const ativo=u?confirm('Manter o acesso ATIVO?\n\nOK = ativo · Cancelar = desligar'):true;
-  const senha=prompt(u?'Senha provisória nova (deixe em branco para não trocar):':'Senha provisória (8+ caracteres; a pessoa troca no primeiro acesso):','');
-  if(senha===null) return;
-  const r=await api('usuarios','POST',{u:login.trim().toLowerCase(),n:nome.trim(),r:funcao.trim().toLowerCase(),ativo:ativo,senha:senha});
-  if(r.status!==200){ alert(r.j.erro||'Não gravou.'); return; }
-  renderUsuarios();
+  _usuarioEditando=u;
+  $('usu-titulo').textContent=u?('Alterar usuário — '+u.n):'Novo usuário';
+  $('usu-nome').value=u?u.n:''; $('usu-login').value=u?u.u:''; $('usu-login').disabled=!!u;
+  $('usu-tel').value=u?foneBR(u.tel):''; $('usu-senha').value=''; $('usu-msg').textContent='';
+  const ops=eu.r==='admin'?['admin','gerente','funcionario','consulta']:['funcionario','consulta'];
+  if(u&&ops.indexOf(u.r)<0) ops.unshift(u.r);
+  $('usu-funcao').innerHTML=ops.map(function(f){ return '<option value="'+f+'">'+esc(ROTULO[f]||f)+'</option>'; }).join('');
+  $('usu-funcao').value=u?u.r:'funcionario';
+  const souEu=u&&u.u===eu.u;
+  $('usu-funcao').disabled=souEu; $('usu-ativo').disabled=souEu;
+  $('usu-ativo').checked=u?u.ativo:true;
+  $('usu-dica-senha').textContent=u?'Deixe em branco para não trocar. Se preencher, vira senha provisória: a pessoa cria a dela no próximo acesso.':'8 caracteres ou mais. A pessoa cria a senha dela no primeiro acesso.';
+  $('janela-usuario').classList.add('on');
+  setTimeout(function(){ $(u?'usu-nome':'usu-nome').focus(); },50);
+}
+function fecharUsuario(){ $('janela-usuario').classList.remove('on'); _usuarioEditando=null; esconderSenhas(); }
+async function salvarUsuario(){
+  const u=_usuarioEditando, v=function(id){ return $(id).value.trim(); };
+  const nome=v('usu-nome'), login=(u?u.u:v('usu-login')).toLowerCase(), tel=v('usu-tel').replace(/\D/g,''), senha=$('usu-senha').value;
+  const msg=function(t){ $('usu-msg').textContent=t; };
+  if(nome.split(/\s+/).length<2) return msg('Escreva o nome completo (nome e sobrenome).');
+  if(!/^[a-z0-9._-]{3,30}$/.test(login)) return msg('Usuário: 3 a 30 letras minúsculas, números, ponto ou traço (sem espaço).');
+  if(tel.length<10||tel.length>11) return msg('WhatsApp: DDD + número (ex.: 69 99999-9999).');
+  if(!u&&senha.length<8) return msg('A senha provisória precisa de 8 caracteres ou mais.');
+  if(u&&senha&&senha.length<8) return msg('A senha provisória precisa de 8 caracteres ou mais.');
+  $('usu-salvar').disabled=true;
+  const r=await api('usuarios','POST',{u:login,n:nome,tel:tel,r:$('usu-funcao').value,ativo:$('usu-ativo').checked,senha:senha});
+  $('usu-salvar').disabled=false;
+  if(r.status!==200) return msg(r.j.erro||'Não gravou.');
+  fecharUsuario(); renderUsuarios();
+}
+
+// ---------- WhatsApp (igual à Daluminium: chama o APLICATIVO) ----------
+// Abre o aplicativo do WhatsApp já na conversa, com a mensagem escrita; quem
+// aperta enviar é sempre a pessoa. Se o aplicativo não atender em 1,4 s,
+// aparece um botão para abrir pelo navegador. Sem emoji: chega quebrado.
+function mandarWhatsApp(numero,cliente){
+  let n=String(numero||'').replace(/\D/g,''); if(n.length>=12&&n.indexOf('55')===0) n=n.slice(2);
+  if(n.length<10){ aviso('Este telefone não parece ter DDD + número: '+numero); return; }
+  const primeiro=String(cliente||'').trim().split(/\s+/)[0]||'';
+  const texto='Olá'+(primeiro?', '+primeiro:'')+'! Aqui é '+(eu&&eu.n?eu.n.split(/\s+/)[0]:'')+', da Solutio Representações.';
+  const app='whatsapp://send?phone=55'+n+'&text='+encodeURIComponent(texto);
+  const web='https://api.whatsapp.com/send?phone=55'+n+'&text='+encodeURIComponent(texto);
+  let saiu=false; const marca=function(){ saiu=true; }; window.addEventListener('blur',marca,{once:true});
+  location.href=app;
+  setTimeout(function(){
+    window.removeEventListener('blur',marca);
+    if(saiu||document.hidden) return;
+    const a=document.getElementById('wa-reserva'); if(a) a.remove();
+    const d=document.createElement('div'); d.id='wa-reserva';
+    d.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--grafite);color:#fff;padding:12px 16px;border-radius:10px;z-index:200;display:flex;gap:10px;align-items:center;box-shadow:0 6px 20px rgba(0,0,0,.3)';
+    d.innerHTML='O aplicativo do WhatsApp não abriu. <a class="btn btn-p" target="_blank" rel="noopener" href="'+web+'" onclick="this.parentNode.remove()">Abrir pelo navegador</a> <button class="btn btn-claro" onclick="this.parentNode.remove()">✕</button>';
+    document.body.appendChild(d);
+  },1400);
+}
+function botaoWhats(numero,cliente){
+  if(!numero) return '';
+  return ' <button type="button" class="btn" style="padding:3px 10px" onclick="event.stopPropagation();mandarWhatsApp(\''+esc(String(numero).replace(/'/g,''))+'\',\''+esc(String(cliente||'').replace(/'/g,''))+'\')">WhatsApp</button>';
 }
 
 // ---------- olhinho da senha ----------
@@ -677,6 +794,7 @@ async function renderAcessos(){
 // ---------- início ----------
 document.addEventListener('keydown',function(e){
   if(e.key==='Enter' && !$('tela-login').classList.contains('oculto')) entrar();
+  if(e.key==='Escape' && $('visor-anexo').classList.contains('on')){ fecharVisor(); return; }
   if(e.key==='Escape' && $('ficha').classList.contains('on')) fecharFicha();
 });
 (function(){
