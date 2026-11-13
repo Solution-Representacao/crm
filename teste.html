@@ -183,6 +183,19 @@ th{position:static}h2{break-after:avoid}tr{break-inside:avoid}
   </div>
 </div>
 
+<!-- ===== FICHA DE UM ORÇAMENTO DA DALUMINIUM (só leitura) ===== -->
+<div class="fundo" id="ficha-dal">
+  <div class="modal">
+    <div class="modal-topo"><h3 id="fd-titulo">Orçamento da Daluminium</h3><button class="btn" onclick="fecharDal()">✕</button></div>
+    <div class="modal-corpo" id="fd-corpo"></div>
+    <div class="modal-pe">
+      <span class="dica" style="margin-right:auto">Só leitura: quem atualiza é a Daluminium.</span>
+      <button class="btn" onclick="fecharDal()">Fechar</button>
+      <button class="btn btn-p" id="fd-acompanhar" onclick="acompanharDal()">Acompanhar no meu funil</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== SENHA ===== -->
 <div class="fundo" id="janela-senha">
   <div class="modal" style="max-width:400px">
@@ -405,14 +418,76 @@ function htmlDal(){
   const l=(dal.orcamentos||[]).slice().sort(function(a,b){return String(b.criadoEm).localeCompare(String(a.criadoEm));});
   const soma=l.reduce(function(s,o){return s+(Number(o.valor)||0);},0);
   return (dal.erro?'<div class="aviso erro">'+esc(dal.erro)+'</div>':'')+
-    '<div class="aviso" style="background:var(--vinho-cl);color:var(--vinho)">Orçamentos que as vendedoras da Daluminium marcaram como <b>Solutio</b>. Só para acompanhar: quem atualiza é a Daluminium. Se desmarcarem, o orçamento some daqui.</div>'+
+    '<div class="aviso" style="background:var(--vinho-cl);color:var(--vinho)">Orçamentos que as vendedoras da Daluminium marcaram como <b>Solutio</b>. <b>Clique na linha</b> para ver a ficha com tudo para orçar (o que o cliente quer, anotações e anexos). Quem atualiza é a Daluminium; se desmarcarem, o orçamento some daqui.</div>'+
     '<div class="barra"><span class="esp"></span><button class="btn" onclick="dal=null;render();carregarDal()">Atualizar</button></div>'+
     '<div class="tabela-caixa"><table><thead><tr><th>Lançado em</th><th>Cliente</th><th>Telefone</th><th>Cidade</th><th>Vendedora</th><th>Etapa</th><th class="num">Valor</th><th>Atualizado</th></tr></thead><tbody>'+
     (l.length?l.map(function(o){
       const cls=o.situacao==='ganho'?'etq-ganho':o.situacao==='perdido'?'etq-perdido':'etq-aberto';
-      return '<tr><td>'+dataBR(o.criadoEm)+'</td><td>'+esc(o.cliente)+'</td><td>'+(o.telefone?'<a href="https://wa.me/55'+esc(String(o.telefone).replace(/\D/g,''))+'" target="_blank" rel="noopener">'+esc(o.telefone)+'</a>':'')+'</td><td>'+esc(o.cidade)+'</td><td>'+esc(o.vendedora)+'</td><td><span class="etq '+cls+'">'+esc(o.etapa)+'</span>'+(o.motivoPerda?' '+esc(o.motivoPerda):'')+'</td><td class="num">'+moeda(o.valor)+'</td><td>'+dataBR(o.atualizadoEm)+'</td></tr>';
+      return '<tr class="clic" onclick="abrirDal(\''+esc(o.id)+'\')"><td>'+dataBR(o.criadoEm)+'</td><td>'+esc(o.cliente)+(meuDoDal(o.id)?' <span class="etq etq-dal">no meu funil</span>':'')+((o.docs||[]).length?' <span class="etq etq-aberto">📎 '+o.docs.length+'</span>':'')+'</td><td>'+(o.telefone?'<a href="https://wa.me/55'+esc(String(o.telefone).replace(/\D/g,''))+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">'+esc(o.telefone)+'</a>':'')+'</td><td>'+esc(o.cidade)+'</td><td>'+esc(o.vendedora)+'</td><td><span class="etq '+cls+'">'+esc(o.etapa)+'</span>'+(o.motivoPerda?' '+esc(o.motivoPerda):'')+'</td><td class="num">'+moeda(o.valor)+'</td><td>'+dataBR(o.atualizadoEm)+'</td></tr>';
     }).join(''):'<tr><td colspan="8" class="vazio">Nenhum orçamento marcado como Solutio por enquanto.</td></tr>')+
     '</tbody><tfoot><tr><td colspan="6">'+l.length+' orçamento(s)</td><td class="num">'+moeda(soma)+'</td><td></td></tr></tfoot></table></div>';
+}
+
+// ---------- ficha de um orçamento da Daluminium ----------
+let dalAberto=null;
+function meuDoDal(id){ return ativos().find(function(o){ return o.dalId===id; })||null; }
+function tamanhoBR(b){ b=Number(b)||0; return b>=1048576?(b/1048576).toFixed(1).replace('.',',')+' MB':b>=1024?Math.round(b/1024)+' KB':(b?b+' B':''); }
+function abrirDal(id){
+  const o=((dal&&dal.orcamentos)||[]).find(function(x){ return x.id===id; });
+  if(!o) return;
+  dalAberto=o;
+  const linha=function(rot,val){ return val?'<div class="fg"><label>'+rot+'</label><div style="padding:6px 0;white-space:pre-wrap">'+val+'</div></div>':''; };
+  const tel=o.telefone?'<a href="https://wa.me/55'+esc(String(o.telefone).replace(/\D/g,''))+'" target="_blank" rel="noopener">'+esc(o.telefone)+'</a> <span class="dica">(abre o WhatsApp)</span>':'';
+  const docs=(o.docs||[]);
+  $('fd-titulo').textContent=o.cliente||'Orçamento da Daluminium';
+  $('fd-corpo').innerHTML=
+    '<div class="grade">'+
+      linha('Cliente',esc(o.cliente))+linha('Telefone',tel)+
+      linha('E-mail',o.email?'<a href="mailto:'+esc(o.email)+'">'+esc(o.email)+'</a>':'')+linha('Cidade / bairro',esc([o.cidade,o.bairro].filter(Boolean).join(' · ')))+
+      linha('Vendedora (Daluminium)',esc(o.vendedora))+linha('Etapa lá',esc(o.etapa)+(o.motivoPerda?' — '+esc(o.motivoPerda):''))+
+      linha('Valor lá',o.valor?moeda(o.valor):'')+linha('Lançado / atualizado',dataBR(o.criadoEm)+(o.atualizadoEm?' · '+dataBR(o.atualizadoEm):''))+
+    '</div>'+
+    '<h2 style="margin-top:14px">O que o cliente quer</h2>'+
+    '<div style="background:var(--areia-cl);border-radius:6px;padding:10px 12px;white-space:pre-wrap">'+(esc(o.interesse)||'<span class="dica">Nada escrito em "Interesse".</span>')+'</div>'+
+    (o.obs?'<h2>Observações</h2><div style="background:var(--areia-cl);border-radius:6px;padding:10px 12px;white-space:pre-wrap">'+esc(o.obs)+'</div>':'')+
+    '<h2>Anexos ('+docs.length+')</h2>'+
+    (docs.length?'<div class="tabela-caixa"><table><tbody>'+docs.map(function(d,i){
+      return '<tr><td>📎 '+esc(d.nome)+' <span class="dica">'+tamanhoBR(d.tamanho)+(d.quando?' · '+dataBR(d.quando):'')+'</span></td><td style="text-align:right">'+
+        (d.arquivo?'<button class="btn" onclick="abrirAnexoDal('+i+',\'ver\')">Ver</button> <button class="btn" onclick="abrirAnexoDal('+i+',\'baixar\')">Baixar</button>'
+          :(d.link?'<a class="btn" href="'+esc(d.link)+'" target="_blank" rel="noopener">Abrir link</a>':''))+'</td></tr>';
+    }).join('')+'</tbody></table></div><p class="dica" style="margin-top:6px">Cada abertura fica anotada nos dois sistemas. O link vale 1 minuto.</p>':'<div class="dica">Nenhum anexo.</div>')+
+    '<h2>Anotações de contato ('+(o.notas||[]).length+')</h2>'+
+    ((o.notas||[]).length?'<div class="notas" style="border-top:0">'+o.notas.slice().reverse().map(function(n){ return '<div class="nota"><b>'+dataBR(n.quando)+(n.quem?' · '+esc(n.quem):'')+'</b>'+esc(n.texto)+'</div>'; }).join('')+'</div>':'<div class="dica">Nenhuma anotação.</div>');
+  const meu=meuDoDal(o.id);
+  $('fd-acompanhar').textContent=meu?'Abrir no meu funil':'Acompanhar no meu funil';
+  $('fd-acompanhar').classList.toggle('oculto',!meu&&!podeAlterar());
+  $('ficha-dal').classList.add('on');
+}
+function fecharDal(){ $('ficha-dal').classList.remove('on'); dalAberto=null; }
+async function abrirAnexoDal(i,modo){
+  const o=dalAberto; const d=o&&(o.docs||[])[i]; if(!d) return;
+  // A aba abre JÁ no clique (senão o navegador bloqueia) e recebe o endereço depois.
+  const aba=window.open('about:blank','_blank');
+  const r=await api('daluminium-anexo','POST',{negocio:o.id,doc:d.id,modo:modo,nomeArquivo:d.nome});
+  if(r.status!==200||!r.j.abrir){ if(aba) aba.close(); alert(r.j.erro||'Não consegui abrir o anexo.'); return; }
+  if(aba) aba.location.href=r.j.abrir; else location.href=r.j.abrir;
+}
+async function acompanharDal(){
+  const o=dalAberto; if(!o) return;
+  const meu=meuDoDal(o.id);
+  if(meu){ fecharDal(); abrirFicha(meu.id); return; }
+  // Cria um orçamento da Solutio ligado a este (dalId). Os dados que vieram
+  // da Daluminium entram como ponto de partida; o resto a Solutio completa.
+  const id=novoId();
+  const ok=await alterar(function(base){
+    if(base.orcamentos.some(function(x){ return x.dalId===o.id && !x.excluido; })) return false;
+    base.orcamentos.push({id:id,dalId:o.id,dataOrcamento:String(o.criadoEm||'').slice(0,10),etapa:'proposta',
+      cliente:o.cliente||'',telefone:o.telefone||'',cidade:o.cidade||'',uf:'RO',vendedor:o.vendedora||'',valor:Number(o.valor)||0,
+      situacao:'Veio da Daluminium',criadoEm:agora(),criadoPor:eu.n,atualizadoEm:agora(),atualizadoPor:eu.n,
+      notas:[{quando:agora(),quem:eu.n,texto:'Veio da Daluminium (vendedora '+(o.vendedora||'—')+'). O que o cliente quer: '+(o.interesse||'—')}]});
+  });
+  if(!ok){ alert('Não consegui criar. Atualize a tela e tente de novo.'); return; }
+  fecharDal(); render(); abrirFicha(id);
 }
 
 // ---------- relatório mês a mês ----------
