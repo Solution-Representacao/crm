@@ -144,6 +144,7 @@ th{position:static}h2{break-after:avoid}tr{break-inside:avoid}
     <button class="aba" data-v="dal" onclick="irPara('dal')">Da Daluminium</button>
     <button class="aba" data-v="relatorio" onclick="irPara('relatorio')">Relatório</button>
     <button class="aba oculto" data-v="usuarios" id="aba-usuarios" onclick="irPara('usuarios')">Usuários</button>
+    <button class="aba oculto" data-v="acessos" id="aba-acessos" onclick="irPara('acessos')">Acessos</button>
   </div>
   <div class="conteudo" id="conteudo"></div>
 </div>
@@ -232,10 +233,14 @@ function novoId(){ return 'o'+Date.now().toString(36)+Math.random().toString(36)
 function etapa(id){ return ETAPAS.find(function(e){return e.id===id;})||ETAPAS[0]; }
 function ativos(){ return (dados.orcamentos||[]).filter(function(o){return !o.excluido;}); }
 function podeAlterar(){ return eu && eu.r!=='consulta'; }
+// Funções iguais às da Daluminium. Quem decide de verdade é o porteiro; a tela só esconde o botão.
+const NIVEL={consulta:1,funcionario:2,gerente:3,admin:4};
+function nivel(){ return (eu&&NIVEL[eu.r])||0; }
+const ROTULO={admin:'Administrador',gerente:'Gerente',funcionario:'Funcionário',consulta:'Só consulta'};
 
-async function api(acao,metodo,corpo,semSistema){
+async function api(acao,metodo,corpo){
   const h={'Content-Type':'application/json','X-Action':acao||''};
-  if(!semSistema) h['X-Sistema']=SISTEMA;
+  h['X-Sistema']=SISTEMA;   // o porteiro usa para saber o ambiente (logins separados)
   if(cracha) h['Authorization']='Bearer '+cracha;
   let r;
   try{ r=await fetch(WORKER,{method:metodo||'GET',headers:h,body:corpo?JSON.stringify(corpo):undefined}); }
@@ -250,19 +255,18 @@ async function entrar(){
   const u=$('l-u').value.trim(), s=$('l-s').value;
   if(!u||!s){ $('l-msg').textContent='Preencha usuário e senha.'; return; }
   $('l-btn').disabled=true; $('l-msg').textContent='';
-  const r=await api('login','POST',{u:u,senha:s},true);
+  const r=await api('login','POST',{u:u,senha:s});
   $('l-btn').disabled=false;
   if(r.status!==200){ $('l-msg').textContent=r.j.erro||'Não consegui entrar.'; return; }
-  if(NO_TESTE && r.j.usuario.r!=='admin'){ $('l-msg').textContent='O ambiente de teste é só do administrador.'; return; }
   cracha=r.j.cracha; eu=r.j.usuario;
-  try{ sessionStorage.setItem('solutio-cracha',cracha); sessionStorage.setItem('solutio-eu',JSON.stringify(eu)); }catch(e){}
+  try{ sessionStorage.setItem('solutio-cracha-'+SISTEMA,cracha); sessionStorage.setItem('solutio-eu-'+SISTEMA,JSON.stringify(eu)); }catch(e){}
   $('l-s').value=''; esconderSenhas();
   await abrirSistema();
   if(eu.trocar) abrirSenha(true);
 }
 function sair(venceu){
   cracha=''; eu=null;
-  try{ sessionStorage.removeItem('solutio-cracha'); sessionStorage.removeItem('solutio-eu'); }catch(e){}
+  try{ sessionStorage.removeItem('solutio-cracha-'+SISTEMA); sessionStorage.removeItem('solutio-eu-'+SISTEMA); }catch(e){}
   $('tela-app').classList.add('oculto'); $('tela-login').classList.remove('oculto');
   if(venceu===true) $('l-msg').textContent='Sua sessão venceu. Entre de novo.';
 }
@@ -270,7 +274,8 @@ async function abrirSistema(){
   $('tela-login').classList.add('oculto'); $('tela-app').classList.remove('oculto');
   $('faixa-teste').classList.toggle('oculto',!NO_TESTE);
   $('quem-nome').textContent=eu.n+(eu.r==='consulta'?' (só consulta)':'');
-  $('aba-usuarios').classList.toggle('oculto',eu.r!=='admin');
+  $('aba-usuarios').classList.toggle('oculto',nivel()<NIVEL.gerente);
+  $('aba-acessos').classList.toggle('oculto',eu.r!=='admin');
   $('conteudo').innerHTML='<div class="vazio">Carregando…</div>';
   await carregar();
   render();
@@ -318,6 +323,7 @@ function render(){
   else if(vista==='dal') c.innerHTML=htmlDal();
   else if(vista==='relatorio') c.innerHTML=htmlRelatorio();
   else if(vista==='usuarios'){ c.innerHTML='<div class="vazio">Carregando…</div>'; renderUsuarios(); }
+  else if(vista==='acessos'){ c.innerHTML='<div class="vazio">Carregando…</div>'; renderAcessos(); }
 }
 function preencherSugestoes(){
   const pega=function(campo){ const m={}; ativos().forEach(function(o){ if(o[campo]) m[o[campo]]=1; }); return Object.keys(m).sort(); };
@@ -480,7 +486,7 @@ function abrirFicha(id){
   const pode=podeAlterar();
   document.querySelectorAll('#ficha input,#ficha select,#ficha textarea').forEach(function(el){ el.disabled=!pode; });
   $('f-salvar').classList.toggle('oculto',!pode);
-  $('f-excluir').classList.toggle('oculto',!(o&&eu.r==='admin'));
+  $('f-excluir').classList.toggle('oculto',!(o&&nivel()>=NIVEL.gerente));
   $('ficha').classList.add('on');
   setTimeout(function(){ $('f-cliente').focus(); },50);
 }
@@ -529,33 +535,34 @@ async function trocarSenha(){
   const a=$('s-atual').value, n=$('s-nova').value, n2=$('s-nova2').value;
   if(n.length<8){ $('s-msg').textContent='A senha nova precisa de 8 caracteres ou mais.'; return; }
   if(n!==n2){ $('s-msg').textContent='As duas senhas novas não são iguais.'; return; }
-  const r=await api('trocar-senha','POST',{atual:a,nova:n},true);
+  const r=await api('trocar-senha','POST',{atual:a,nova:n});
   if(r.status!==200){ $('s-msg').textContent=r.j.erro||'Não consegui trocar.'; return; }
-  eu.trocar=false; try{ sessionStorage.setItem('solutio-eu',JSON.stringify(eu)); }catch(e){}
+  eu.trocar=false; try{ sessionStorage.setItem('solutio-eu-'+SISTEMA,JSON.stringify(eu)); }catch(e){}
   fecharSenha(); alert('Senha trocada.');
 }
 
 // ---------- usuários (admin) ----------
 async function renderUsuarios(){
-  const r=await api('usuarios','GET',null,true);
+  const r=await api('usuarios','GET',null);
   if(vista!=='usuarios') return;
   if(r.status!==200){ $('conteudo').innerHTML='<div class="aviso erro">'+esc(r.j.erro||'Não consegui carregar.')+'</div>'; return; }
-  const rot={admin:'Administrador',vendedor:'Vendedor(a)',consulta:'Só consulta'};
+  const rot=ROTULO;
   window._usuarios=r.j.lista;
   $('conteudo').innerHTML='<div class="barra"><span class="esp"></span><button class="btn btn-p" onclick="editarUsuario()">+ Novo usuário</button></div>'+
     '<div class="tabela-caixa"><table><thead><tr><th>Nome</th><th>Login</th><th>Função</th><th>Situação</th><th></th></tr></thead><tbody>'+
     r.j.lista.map(function(u,i){ return '<tr><td>'+esc(u.n)+'</td><td>'+esc(u.u)+'</td><td>'+esc(rot[u.r]||u.r)+'</td><td>'+(u.ativo?(u.trocar?'Senha provisória':'Ativo'):'Desligado')+'</td><td><button class="btn" onclick="editarUsuario('+i+')">Alterar</button></td></tr>'; }).join('')+
-    '</tbody></table></div><p class="dica" style="margin-top:10px">Administrador: tudo, inclusive excluir e o ambiente de teste. Vendedor(a): lança e atualiza. Só consulta: olha, não altera.</p>';
+    '</tbody></table></div><p class="dica" style="margin-top:10px">'+(NO_TESTE?'<b>Lista de usuários do TESTE</b> — separada da produção, com senhas próprias. ':'')+'<b>Administrador</b>: tudo. <b>Gerente</b>: lança, corrige e exclui; cadastra funcionário e consulta. <b>Funcionário</b>: lança e atualiza, não exclui. <b>Só consulta</b>: olha, não altera.</p>';
 }
 async function editarUsuario(i){
   const u=(typeof i==='number')?window._usuarios[i]:null;
   const login=u?u.u:prompt('Login (ex.: paula):'); if(!login) return;
   const nome=prompt('Nome:',u?u.n:''); if(nome===null) return;
-  const funcao=prompt('Função — digite admin, vendedor ou consulta:',u?u.r:'vendedor'); if(funcao===null) return;
+  const opcoes=eu.r==='admin'?'admin, gerente, funcionario ou consulta':'funcionario ou consulta';
+  const funcao=prompt('Função — digite '+opcoes+':',u?u.r:'funcionario'); if(funcao===null) return;
   const ativo=u?confirm('Manter o acesso ATIVO?\n\nOK = ativo · Cancelar = desligar'):true;
   const senha=prompt(u?'Senha provisória nova (deixe em branco para não trocar):':'Senha provisória (8+ caracteres; a pessoa troca no primeiro acesso):','');
   if(senha===null) return;
-  const r=await api('usuarios','POST',{u:login.trim().toLowerCase(),n:nome.trim(),r:funcao.trim().toLowerCase(),ativo:ativo,senha:senha},true);
+  const r=await api('usuarios','POST',{u:login.trim().toLowerCase(),n:nome.trim(),r:funcao.trim().toLowerCase(),ativo:ativo,senha:senha});
   if(r.status!==200){ alert(r.j.erro||'Não gravou.'); return; }
   renderUsuarios();
 }
@@ -575,6 +582,23 @@ document.querySelectorAll('input[type="password"]').forEach(function(inp){
 // Ao fechar a janela de senha ou sair, a senha volta a ficar escondida.
 function esconderSenhas(){ document.querySelectorAll('.senha-caixa input').forEach(function(i){ i.type='password'; }); document.querySelectorAll('.olhinho').forEach(function(b){ b.innerHTML=OLHO_ABERTO; }); }
 
+// ---------- acessos (caderno, só admin) ----------
+async function renderAcessos(){
+  const r=await api('acessos','GET',null);
+  if(vista!=='acessos') return;
+  if(r.status!==200){ $('conteudo').innerHTML='<div class="aviso erro">'+esc(r.j.erro||'Não consegui carregar.')+'</div>'; return; }
+  const l=r.j.lista||[];
+  const hora=function(t){ const d=new Date(t); return isNaN(d)?'':d.toLocaleString('pt-BR',{timeZone:'America/Porto_Velho',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); };
+  const erradas=l.filter(function(x){ return x.acao==='senha errada'||x.acao==='barrado'; }).length;
+  $('conteudo').innerHTML=(r.j.erro?'<div class="aviso erro">'+esc(r.j.erro)+'</div>':'')+
+    '<div class="aviso" style="background:var(--vinho-cl);color:var(--vinho)">Caderno de acessos'+(NO_TESTE?' do <b>TESTE</b>':'')+': quem entrou, errou a senha, lançou, alterou ou excluiu orçamento e mexeu em usuário. Guardado por 5 anos; ninguém altera nem apaga. Mostrando os últimos '+l.length+'.'+(erradas?' <b>'+erradas+' senha(s) errada(s) ou bloqueio(s)</b> nesta lista.':'')+'</div>'+
+    '<div class="barra"><span class="esp"></span><button class="btn" onclick="render()">Atualizar</button></div>'+
+    '<div class="tabela-caixa"><table><thead><tr><th>Quando</th><th>Quem</th><th>O quê</th><th>Detalhe</th><th>Endereço</th></tr></thead><tbody>'+
+    (l.length?l.map(function(x){ const alerta=x.acao==='senha errada'||x.acao==='barrado';
+      return '<tr'+(alerta?' style="color:var(--vermelho)"':'')+'><td>'+hora(x.criado_em)+'</td><td>'+esc(x.nome||x.usuario)+'</td><td>'+esc(x.acao)+'</td><td>'+esc(x.alvo)+'</td><td>'+esc(x.endereco)+'</td></tr>'; }).join(''):'<tr><td colspan="5" class="vazio">Nada anotado ainda.</td></tr>')+
+    '</tbody></table></div><p class="dica" style="margin-top:10px">"Endereço" é um resumo do endereço de internet (não o número): o mesmo resumo = o mesmo lugar.</p>';
+}
+
 // ---------- início ----------
 document.addEventListener('keydown',function(e){
   if(e.key==='Enter' && !$('tela-login').classList.contains('oculto')) entrar();
@@ -582,7 +606,7 @@ document.addEventListener('keydown',function(e){
 });
 (function(){
   try{
-    const c=sessionStorage.getItem('solutio-cracha'), u=sessionStorage.getItem('solutio-eu');
+    const c=sessionStorage.getItem('solutio-cracha-'+SISTEMA), u=sessionStorage.getItem('solutio-eu-'+SISTEMA);
     if(c&&u){ cracha=c; eu=JSON.parse(u); abrirSistema().then(function(){ if(eu&&eu.trocar) abrirSenha(true); }); }
   }catch(e){}
 })();
