@@ -1,4 +1,4 @@
 {
-  "versao": "2026-11-13 14:44 aviso-de-versao",
+  "versao": "2026-11-13 15:07 aba-daluminium",
   "obs": "Numero da versao publicada. A tela le este arquivo para avisar quem esta com a pagina aberta que saiu versao nova. Trocar a cada publicacao (versao-teste.json = teste; versao.json = producao)."
 }
