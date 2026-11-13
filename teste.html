@@ -164,6 +164,8 @@ th{position:static}h2{break-after:avoid}tr{break-inside:avoid}
         <div class="fg"><label for="f-marca">Marca</label><input id="f-marca" maxlength="60" list="dl-marcas"></div>
         <div class="fg"><label for="f-valor">Valor (R$)</label><input id="f-valor" inputmode="decimal" placeholder="0,00"></div>
         <div class="fg"><label for="f-vendedor">Vendedor(a)</label><input id="f-vendedor" maxlength="60" list="dl-vendedores"></div>
+        <div class="fg" id="fg-dono"><label for="f-dono">Responsável no sistema</label><select id="f-dono"></select>
+          <span class="dica">O funcionário só vê os orçamentos em que ele é o responsável.</span></div>
         <div class="fg"><label for="f-profissional">Profissional (arquiteto)</label><input id="f-profissional" maxlength="80" list="dl-profissionais"></div>
         <div class="fg"><label for="f-prazo">Prazo previsto</label><input id="f-prazo" maxlength="60" placeholder="ex.: Dezembro/Janeiro"></div>
         <div class="fg"><label for="f-cidade">Município</label><input id="f-cidade" maxlength="60"></div>
@@ -341,9 +343,18 @@ async function abrirSistema(){
   $('aba-acessos').classList.toggle('oculto',eu.r!=='admin');
   $('conteudo').innerHTML='<div class="vazio">Carregando…</div>';
   await carregar();
+  await carregarEquipe();
   render();
   carregarDal();
 }
+// Equipe (para escolher o responsável e mostrar o nome dele).
+let equipe=[];
+async function carregarEquipe(){
+  if(nivel()<NIVEL.gerente){ equipe=eu?[{u:eu.u,n:eu.n,r:eu.r}]:[]; return; }
+  const r=await api('equipe','GET',null);
+  equipe=(r.status===200&&Array.isArray(r.j.lista))?r.j.lista:[];
+}
+function nomeDoDono(u){ const x=equipe.find(function(e){ return e.u===u; }); return x?x.n:(u||''); }
 async function carregar(){
   const r=await api('','GET');
   if(r.status!==200){ $('conteudo').innerHTML='<div class="aviso erro">'+esc(r.j.erro||r.j.mensagem||'Não consegui carregar.')+'</div>'; return false; }
@@ -435,7 +446,9 @@ function etiquetas(o){
 function htmlFunil(){
   const l=filtrados();
   const semData=ativos().filter(function(o){return !o.dataOrcamento;}).length;
-  return (semData?'<div class="aviso">'+semData+' orçamento(s) sem data. Abra cada um e preencha a <b>Data do orçamento</b> para eles entrarem no relatório mês a mês. <a href="#" onclick="filtro.semData=true;irPara(\'lista\');return false">Ver quais</a></div>':'')+
+  const semDono=nivel()>=NIVEL.gerente?ativos().filter(function(o){return !o.dono;}).length:0;
+  return (semDono?'<div class="aviso">'+semDono+' orçamento(s) <b>sem responsável</b>: nenhum funcionário vê esses, só administrador e gerente. Abra cada um e escolha o <b>Responsável no sistema</b>.</div>':'')+
+    (semData?'<div class="aviso">'+semData+' orçamento(s) sem data. Abra cada um e preencha a <b>Data do orçamento</b> para eles entrarem no relatório mês a mês. <a href="#" onclick="filtro.semData=true;irPara(\'lista\');return false">Ver quais</a></div>':'')+
     barraFiltros(true)+
     '<div class="funil">'+ETAPAS.map(function(e){
       const da=l.filter(function(o){return (o.etapa||'proposta')===e.id;});
@@ -446,7 +459,8 @@ function htmlFunil(){
             '<div class="p">'+esc([o.produto,o.marca].filter(Boolean).join(' · '))+'</div>'+
             (o.valor?'<div class="v">'+moeda(o.valor)+'</div>':'')+
             '<div class="p">'+esc([o.vendedor,o.dataOrcamento?dataBR(o.dataOrcamento):''].filter(Boolean).join(' · '))+'</div>'+
-            (o.situacao?'<div class="p">→ '+esc(o.situacao)+'</div>':'')+etiquetas(o)+'</div>';
+            (o.situacao?'<div class="p">→ '+esc(o.situacao)+'</div>':'')+
+            (nivel()>=NIVEL.gerente?'<div class="p">👤 '+(o.dono?esc(nomeDoDono(o.dono)):'<i>sem responsável</i>')+'</div>':'')+etiquetas(o)+'</div>';
         }).join(''):'<div class="vazio" style="padding:14px">Nada aqui</div>')+'</div>';
     }).join('')+'</div>';
 }
@@ -455,11 +469,11 @@ function htmlFunil(){
 function htmlLista(){
   const l=filtrados().slice().sort(function(a,b){ return String(b.dataOrcamento||'9999').localeCompare(String(a.dataOrcamento||'9999')); });
   const soma=l.reduce(function(s,o){return s+(Number(o.valor)||0);},0);
-  return barraFiltros(true)+'<div class="tabela-caixa"><table><thead><tr><th>Data</th><th>Cliente</th><th>Produto</th><th>Marca</th><th>Profissional</th><th>Vendedor</th><th>Etapa</th><th class="num">Valor</th><th>Prazo</th><th>Situação</th></tr></thead><tbody>'+
+  return barraFiltros(true)+'<div class="tabela-caixa"><table><thead><tr><th>Data</th><th>Cliente</th><th>Produto</th><th>Marca</th><th>Profissional</th><th>Vendedor</th>'+(nivel()>=NIVEL.gerente?'<th>Responsável</th>':'')+'<th>Etapa</th><th class="num">Valor</th><th>Prazo</th><th>Situação</th></tr></thead><tbody>'+
     (l.length?l.map(function(o){
-      return '<tr class="clic" onclick="abrirFicha(\''+esc(o.id)+'\')"><td>'+(o.dataOrcamento?dataBR(o.dataOrcamento):'<span class="etq etq-semdata">sem data</span>')+'</td><td>'+esc(o.cliente)+'</td><td>'+esc(o.produto)+'</td><td>'+esc(o.marca)+'</td><td>'+esc(o.profissional)+'</td><td>'+esc(o.vendedor)+'</td><td>'+esc(etapa(o.etapa).nome)+'</td><td class="num">'+moeda(o.valor)+'</td><td>'+esc(o.prazo)+'</td><td>'+esc(o.situacao)+'</td></tr>';
-    }).join(''):'<tr><td colspan="10" class="vazio">Nenhum orçamento com esses filtros.</td></tr>')+
-    '</tbody><tfoot><tr><td colspan="7">'+l.length+' orçamento(s)</td><td class="num">'+moeda(soma)+'</td><td colspan="2"></td></tr></tfoot></table></div>';
+      return '<tr class="clic" onclick="abrirFicha(\''+esc(o.id)+'\')"><td>'+(o.dataOrcamento?dataBR(o.dataOrcamento):'<span class="etq etq-semdata">sem data</span>')+'</td><td>'+esc(o.cliente)+'</td><td>'+esc(o.produto)+'</td><td>'+esc(o.marca)+'</td><td>'+esc(o.profissional)+'</td><td>'+esc(o.vendedor)+'</td>'+(nivel()>=NIVEL.gerente?'<td>'+(o.dono?esc(nomeDoDono(o.dono)):'<i class="dica">sem responsável</i>')+'</td>':'')+'<td>'+esc(etapa(o.etapa).nome)+'</td><td class="num">'+moeda(o.valor)+'</td><td>'+esc(o.prazo)+'</td><td>'+esc(o.situacao)+'</td></tr>';
+    }).join(''):'<tr><td colspan="11" class="vazio">Nenhum orçamento com esses filtros.</td></tr>')+
+    '</tbody><tfoot><tr><td colspan="'+(nivel()>=NIVEL.gerente?8:7)+'">'+l.length+' orçamento(s)</td><td class="num">'+moeda(soma)+'</td><td colspan="2"></td></tr></tfoot></table></div>';
 }
 
 // ---------- da Daluminium ----------
@@ -619,6 +633,17 @@ function abrirFicha(id){
   p('f-produto',x.produto); p('f-marca',x.marca); p('f-valor',valorCampo(x.valor)); p('f-vendedor',x.vendedor);
   p('f-profissional',x.profissional); p('f-prazo',x.prazo); p('f-cidade',x.cidade); p('f-uf',x.uf);
   p('f-situacao',x.situacao); p('f-motivo',x.motivoPerda); p('f-nota','');
+  // Responsável: só admin e gerente escolhem (o funcionário é sempre ele mesmo).
+  const ger=nivel()>=NIVEL.gerente;
+  $('fg-dono').classList.toggle('oculto',!ger);
+  if(ger){
+    const ops=equipe.filter(function(e){ return e.r!=='consulta'; });
+    const atual=o?(o.dono||''):eu.u;
+    if(atual&&!ops.some(function(e){ return e.u===atual; })) ops.push({u:atual,n:atual+' (fora da equipe)'});
+    $('f-dono').innerHTML='<option value="">— sem responsável (só admin e gerente veem) —</option>'+
+      ops.map(function(e){ return '<option value="'+esc(e.u)+'">'+esc(e.n)+(e.r?' · '+esc(ROTULO[e.r]||e.r):'')+'</option>'; }).join('');
+    $('f-dono').value=atual;
+  }
   mostrarMotivo();
   $('f-notas').innerHTML=(x.notas||[]).slice().reverse().map(function(n){ return '<div class="nota"><b>'+dataBR(n.quando)+' · '+esc(n.quem)+'</b>'+esc(n.texto)+'</div>'; }).join('');
   $('f-quem').textContent=o?('Lançado por '+(o.criadoPor||'—')+(o.criadoEm?' em '+dataBR(o.criadoEm):'')+(o.atualizadoPor?' · última alteração: '+o.atualizadoPor+' em '+dataBR(o.atualizadoEm):'')):'';
@@ -637,6 +662,7 @@ async function salvarFicha(){
   const f={dataOrcamento:v('f-data'),etapa:v('f-etapa'),cliente:v('f-cliente'),telefone:v('f-telefone'),produto:v('f-produto'),
     marca:v('f-marca'),valor:lerValor(v('f-valor')),vendedor:v('f-vendedor'),profissional:v('f-profissional'),prazo:v('f-prazo'),
     cidade:v('f-cidade'),uf:v('f-uf').toUpperCase(),situacao:v('f-situacao'),motivoPerda:etapa(v('f-etapa')).tipo==='perdido'?v('f-motivo'):''};
+  if(nivel()>=NIVEL.gerente) f.dono=$('f-dono').value;
   if(!f.cliente){ aviso('Preencha o nome do cliente.').then(function(){ $('f-cliente').focus(); }); return; }
   if(f.dataOrcamento && f.dataOrcamento>new Date().toISOString().slice(0,10)){ aviso('A data do orçamento está no futuro. Confira.'); return; }
   const nota=v('f-nota');
